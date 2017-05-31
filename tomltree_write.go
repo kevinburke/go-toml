@@ -100,6 +100,7 @@ func (t *Tree) writeTo(w io.Writer, indent, keyspace string, bytesCount int64) (
 	sort.Strings(simpleValuesKeys)
 	sort.Strings(complexValuesKeys)
 
+	var b bytes.Buffer
 	for _, k := range simpleValuesKeys {
 		v, ok := t.values[k].(*tomlValue)
 		if !ok {
@@ -108,17 +109,15 @@ func (t *Tree) writeTo(w io.Writer, indent, keyspace string, bytesCount int64) (
 
 		repr, err := tomlValueStringRepresentation(v.value)
 		if err != nil {
-			return bytesCount, err
+			return 0, err
 		}
 
-		kvRepr := indent + k + " = " + repr + "\n"
-		writtenBytesCount, err := w.Write([]byte(kvRepr))
-		bytesCount += int64(writtenBytesCount)
-		if err != nil {
-			return bytesCount, err
-		}
+		b.WriteString(indent)
+		b.WriteString(k)
+		b.WriteString(" = ")
+		b.WriteString(repr)
+		b.WriteByte('\n')
 	}
-
 	for _, k := range complexValuesKeys {
 		v := t.values[k]
 
@@ -130,34 +129,18 @@ func (t *Tree) writeTo(w io.Writer, indent, keyspace string, bytesCount int64) (
 		switch node := v.(type) {
 		// node has to be of those two types given how keys are sorted above
 		case *Tree:
-			tableName := "\n" + indent + "[" + combinedKey + "]\n"
-			writtenBytesCount, err := w.Write([]byte(tableName))
-			bytesCount += int64(writtenBytesCount)
-			if err != nil {
-				return bytesCount, err
-			}
-			bytesCount, err = node.writeTo(w, indent+"  ", combinedKey, bytesCount)
-			if err != nil {
-				return bytesCount, err
-			}
+			b.WriteString("\n" + indent + "[" + combinedKey + "]\n")
+			node.writeTo(&b, indent+"  ", combinedKey, bytesCount)
 		case []*Tree:
 			for _, subTree := range node {
-				tableArrayName := "\n" + indent + "[[" + combinedKey + "]]\n"
-				writtenBytesCount, err := w.Write([]byte(tableArrayName))
-				bytesCount += int64(writtenBytesCount)
-				if err != nil {
-					return bytesCount, err
-				}
-
-				bytesCount, err = subTree.writeTo(w, indent+"  ", combinedKey, bytesCount)
-				if err != nil {
-					return bytesCount, err
-				}
+				b.WriteString("\n" + indent + "[[" + combinedKey + "]]\n")
+				subTree.writeTo(&b, indent+"  ", combinedKey, bytesCount)
 			}
 		}
 	}
 
-	return bytesCount, nil
+	n, err := w.Write(b.Bytes())
+	return int64(n), err
 }
 
 // WriteTo encode the Tree as Toml and writes it to the writer w.
